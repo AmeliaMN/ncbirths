@@ -87,7 +87,7 @@ and selected those out.
 nc <- nc %>%
   rename(
     fage = FAGEREC11,
-    mage = MAGER9,
+    mage = MAGER14,
     weeks = COMBGEST,
     visits = UPREVIS,
     gained = WTGAIN,
@@ -121,14 +121,18 @@ nc <- nc %>%
     ),
     mage = case_when(
       mage == 1 ~ "Under 15 years",
-      mage == 2 ~ "15-19 years",
-      mage == 3 ~ "20-24 years",
-      mage == 4 ~ "25-29 years",
-      mage == 5 ~ "30-34 years",
-      mage == 6 ~ "35-39 years",
-      mage == 7 ~ "40-44 years",
-      mage == 8 ~ "45-49 years",
-      mage == 9 ~ "50-54 years"
+      mage == 3 ~ "15 years",
+      mage == 4 ~ "16 years",
+      mage == 5 ~ "17 years",
+      mage == 6 ~ "18 years",
+      mage == 7 ~ "19 years",
+      mage == 8 ~ "20-24 years",
+      mage == 9 ~ "25-29 years",
+      mage == 10 ~ "30-34 years",
+      mage == 11 ~ "35-39 years",
+      mage == 12 ~ "40-44 years",
+      mage == 13 ~ "45-49 years",
+      mage == 14 ~ "50-54 years"
     ),
     mature = case_when(
       mage %in% c("35-39 years", "40-44 years", "45-49 years", "50-54 years") ~ "mature mom",
