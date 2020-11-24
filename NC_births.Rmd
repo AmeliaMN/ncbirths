@@ -1,0 +1,314 @@
+---
+title: "NC births"
+author: "Amelia McNamara"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.show = "hold", out.width = "50%")
+library(tidyverse)
+library(openintro)
+```
+
+An attempt to reproduce the `ncbirths` dataset from the `openintro` package. Data provenance has been lost on that dataset, other than the fact that it's from 2004. 
+
+I found the [ICPSR data from 2004](https://www.icpsr.umich.edu/web/ICPSR/studies/4707/versions/V1), which is quite large. 
+```{r data-load, eval=FALSE}
+X04707_0001_Data <- read_delim("ICPSR_04707/DS0001/04707-0001-Data.tsv",
+  "\t", escape_double = FALSE, trim_ws = TRUE)
+nrow(X04707_0001_Data)
+```
+
+Not going to run that code when I knit because it's so big. `nrow` should be 4118907. 
+
+## North Carolina
+
+Then, I filtered down to just the babies from North Carolina. 
+```{r nc, eval=FALSE}
+nc <- filter(X04707_0001_Data, OSTATE == "NC")
+nrow(nc)
+```
+
+For the record, `nrow` there should be 120588. 
+
+Let's write out just those babies for the future,
+
+```{r write-nc, eval=FALSE}
+write_csv(nc, "nc_full.csv")
+```
+
+And, for our purposes in the document, we can start there,
+
+```{r}
+nc <- read_csv("nc_full.csv")
+```
+
+## Cleaning 
+
+Using the data dictionary, I renamed the variables that looked relevant, and selected those out.  
+```{r rename}
+nc <- nc %>%
+  rename(
+    fage = FAGEREC11,
+    mage = MAGER9,
+    weeks = COMBGEST,
+    visits = UPREVIS,
+    gained = WTGAIN,
+    weight_g = DBWT,
+    sex = SEX,
+    habit = CIG_REC6,
+    marital = MAR,
+    whitemom = MRACEREC
+  ) %>%
+  select(fage, mage, weeks, visits, 
+         gained, weight_g, sex, habit, marital, whitemom)
+```
+
+Again using the data dictionary, I recoded most of the variables. 
+```{r}
+nc <- nc %>%
+  mutate(
+    fage = case_when(
+      fage == 1 ~ "Under 15 years",
+      fage == 2 ~ "15-19 years",
+      fage == 3 ~ "20-24 years",
+      fage == 4 ~ "25-29 years",
+      fage == 5 ~ "30-34 years",
+      fage == 6 ~ "35-39 years",
+      fage == 7 ~ "40-44 years",
+      fage == 8 ~ "45-49 years",
+      fage == 9 ~ "50-54 years",
+      fage == 10 ~ "55-98 years",
+      fage == 11 ~ "Not stated"
+    ),
+    mage = case_when(
+      mage == 1 ~ "Under 15 years",
+      mage == 2 ~ "15-19 years",
+      mage == 3 ~ "20-24 years",
+      mage == 4 ~ "25-29 years",
+      mage == 5 ~ "30-34 years",
+      mage == 6 ~ "35-39 years",
+      mage == 7 ~ "40-44 years",
+      mage == 8 ~ "45-49 years",
+      mage == 9 ~ "50-54 years"
+    ),
+    mature = case_when(
+      mage %in% c("35-39 years", "40-44 years", "45-49 years", "50-54 years") ~ "mature mom",
+      TRUE ~ "younger mom"
+    ),
+    weeks = case_when(
+      weeks == 99 ~ NA_real_,
+      TRUE ~ weeks
+    ),
+    # could read 99 in as NA in read_delim?
+    premie = case_when(
+      weeks < 37 ~ "premie",
+      weeks >= 37 ~ "full term",
+      is.na(weeks) ~ NA_character_
+    ),
+    visits = case_when(
+      visits == 99 ~ NA_real_,
+      TRUE ~ visits
+    ),
+    gained = case_when(
+      gained == 99 ~ NA_real_,
+      TRUE ~ gained
+    ),
+    weight = weight_g / 453.59237,
+    lowbirthweight = case_when(
+      weight <= 5.5 ~ "low",
+      TRUE ~ "not low"
+    ),
+    sex = case_when(
+      sex == 1 ~ "male",
+      sex == 2 ~ "female"
+    ),
+    habit = case_when(
+      habit == 0 ~ "nonsmoker",
+      habit == 6 ~ NA_character_,
+      TRUE ~ "smoker"
+    ),
+    marital = case_when(
+      marital == 1 ~ "married",
+      marital == 2 ~ "not married",
+      marital == 9 ~ NA_character_
+    ),
+    whitemom = case_when(
+      whitemom == 1 ~ "white",
+      TRUE ~ "not white"
+    )
+  )
+nc <- nc %>%
+  select(fage, mage, mature, weeks, premie, visits, 
+         gained, weight, lowbirthweight, sex, habit, 
+         marital, whitemom)
+dim(nc)
+```
+
+## Random sample
+Because `ncbirths` is only 1,000 rows, I took a random sample. 
+
+```{r}
+set.seed(42)
+nc_sample <- nc %>%
+  sample_n(1000)
+data(ncbirths)
+```
+
+
+## Comparing to ncbirths 
+Then, I did all the univariate plots to compare my sample to `ncbirths`. There were some differences right off the bat:
+
+Father's age is now categorical
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(fage))
+ggplot(nc_sample) +
+  geom_bar(aes(fage))
+```
+
+As is mother's age
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(mage))
+ggplot(nc_sample) +
+  geom_bar(aes(mage))
+```
+
+I think we could probably do some sort of recoding along the lines of, 
+
+```{r, eval=FALSE}
+# this doesn't work at all
+test <- nc_sample %>%
+  select(mage)
+test <- test %>%
+  mutate(mage2 = case_when(
+    mage == "15-19 years" ~ sample(15:19, size = 1),
+    TRUE ~ mage
+  ))
+```
+
+But I'd have to think about it more. It would probably make sense to do it before we take the random sample. 
+
+Beyond that, the distributions are pretty comparable 
+
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = mature))
+ggplot(nc_sample) +
+  geom_bar(aes(x = mature))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(weeks))
+ggplot(nc_sample) +
+  geom_histogram(aes(weeks))
+```
+
+We randomly didn't sample any NAs here, so that's a little different
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = premie))
+ggplot(nc_sample) +
+  geom_bar(aes(x = premie))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(visits))
+ggplot(nc_sample) +
+  geom_histogram(aes(visits))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(gained))
+ggplot(nc_sample) +
+  geom_histogram(aes(gained))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(weight))
+ggplot(nc_sample) +
+  geom_histogram(aes(weight))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = lowbirthweight))
+ggplot(nc_sample) +
+  geom_bar(aes(x = lowbirthweight))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = gender))
+ggplot(nc_sample) +
+  geom_bar(aes(x = sex))
+```
+
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = habit))
+ggplot(nc_sample) +
+  geom_bar(aes(x = habit))
+```
+
+Again, we didn't randomly sample NAs for marital status
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = marital))
+ggplot(nc_sample) +
+  geom_bar(aes(x = marital))
+```
+
+or race
+```{r}
+ggplot(ncbirths) +
+  geom_bar(aes(x = whitemom))
+ggplot(nc_sample) +
+  geom_bar(aes(x = whitemom))
+```
+
+## Other checks
+
+Following [Mine's lab](http://www2.stat.duke.edu/~mc301/ARTSCI101_Su16/post/r/nc_births.html) I wanted to make sure things look similar enough there.
+
+```{r}
+ncbirths %>%
+  summarise(mean_wt = mean(weight), sd_wt = sd(weight), n = n())
+nc_sample %>%
+  summarise(mean_wt = mean(weight), sd_wt = sd(weight), n = n())
+```
+
+Those look close to me! 
+
+## Bivariate relationships
+
+```{r}
+ggplot(data = ncbirths, aes(x = habit, y = weight)) +
+  geom_boxplot()
+ggplot(data = nc_sample, aes(x = habit, y = weight)) +
+  geom_boxplot()
+```
+
+```{r}
+ncbirths %>%
+  group_by(habit) %>%
+  summarise(mean_weight = mean(weight))
+nc_sample %>%
+  group_by(habit) %>%
+  summarise(mean_weight = mean(weight))
+```
+
+Again, looks close.
+
+## Writing data
+
+Let's write out that small dataset,
+
+```{r}
+write_csv(nc_sample, "nc_sample.csv")
+```
