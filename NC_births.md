@@ -106,7 +106,7 @@ Again using the data dictionary, I recoded most of the variables.
 ``` r
 nc <- nc %>%
   mutate(
-    fage = case_when(
+    fage_cat = case_when(
       fage == 1 ~ "Under 15 years",
       fage == 2 ~ "15-19 years",
       fage == 3 ~ "20-24 years",
@@ -117,15 +117,15 @@ nc <- nc %>%
       fage == 8 ~ "45-49 years",
       fage == 9 ~ "50-54 years",
       fage == 10 ~ "55-98 years",
-      fage == 11 ~ "Not stated"
+      fage == 11 ~ NA_character_
     ),
-    mage = case_when(
+    mage_cat = case_when(
       mage == 1 ~ "Under 15 years",
-      mage == 3 ~ "15 years",
-      mage == 4 ~ "16 years",
-      mage == 5 ~ "17 years",
-      mage == 6 ~ "18 years",
-      mage == 7 ~ "19 years",
+      mage == 3 ~ "15",
+      mage == 4 ~ "16",
+      mage == 5 ~ "17",
+      mage == 6 ~ "18",
+      mage == 7 ~ "19",
       mage == 8 ~ "20-24 years",
       mage == 9 ~ "25-29 years",
       mage == 10 ~ "30-34 years",
@@ -181,13 +181,53 @@ nc <- nc %>%
     )
   )
 nc <- nc %>%
-  select(fage, mage, mature, weeks, premie, visits, 
+  select(fage_cat, mage_cat, mature, weeks, premie, visits, 
          gained, weight, lowbirthweight, sex, habit, 
          marital, whitemom)
+```
+
+We want to simulate ages from the categorical variables `mage_cat` and
+`fage_cat`, so we need a little function:
+
+``` r
+simulate_ages <- function(.x, .y) {
+  if(is.na(.y)) {
+    rep(NA_integer_, times = nrow(.x))
+  } else if (.y == "Under 15 years") {
+    sample(11:14, size = nrow(.x), replace = TRUE)
+  } else if (.y %in% c("15", "16", "17", "18", "19")) {
+    rep(as.numeric(.y), times = nrow(.x))
+  } else if (.y == "55-98 years") {
+    sample(55:98, size = nrow(.x), replace = TRUE)
+  } else {
+    age <- as.numeric(substr(.y, start = 1, stop = 2))
+    sample(age:(age + 4), size = nrow(.x), replace = TRUE)
+  }
+}
+```
+
+Use the function:
+
+``` r
+nc <- nc %>%
+  group_by(mage_cat) %>%
+  nest() %>%
+  mutate(mage = map2(data, mage_cat, simulate_ages)) %>%
+  unnest(cols = c(data, mage)) %>%
+  ungroup()
+nc <- nc %>%
+  group_by(fage_cat) %>%
+  nest() %>%
+  mutate(fage = map2(data, fage_cat, simulate_ages)) %>%
+  unnest(cols = c(data, fage)) %>%
+  ungroup()
+
+
+
 dim(nc)
 ```
 
-    ## [1] 120588     13
+    ## [1] 120588     15
 
 ## Random sample
 
@@ -203,9 +243,14 @@ data(ncbirths)
 ## Comparing to ncbirths
 
 Then, I did all the univariate plots to compare my sample to `ncbirths`.
-There were some differences right off the bat:
 
-Father’s age is now categorical
+For age, we now have two variables: a categorical one from the original
+data, and a numeric one we simulated.
+
+Let’s start by comparing the original numeric variables to the
+categorical ones.
+
+Father’s age
 
 ``` r
 ggplot(ncbirths) +
@@ -218,12 +263,12 @@ ggplot(ncbirths) +
 
 ``` r
 ggplot(nc_sample) +
-  geom_bar(aes(fage))
+  geom_bar(aes(fage_cat))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-4-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-4-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-5-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-5-2.png" width="50%" />
 
-As is mother’s age
+Mother’s age
 
 ``` r
 ggplot(ncbirths) +
@@ -234,26 +279,54 @@ ggplot(ncbirths) +
 
 ``` r
 ggplot(nc_sample) +
-  geom_bar(aes(mage))
+  geom_bar(aes(mage_cat))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-5-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-5-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-6-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-6-2.png" width="50%" />
 
-I think we could probably do some sort of recoding along the lines of,
+Now, let’s look at our distributions with the simulated variables,
+
+Father’s age
 
 ``` r
-# this doesn't work at all
-test <- nc_sample %>%
-  select(mage)
-test <- test %>%
-  mutate(mage2 = case_when(
-    mage == "15-19 years" ~ sample(15:19, size = 1),
-    TRUE ~ mage
-  ))
+ggplot(ncbirths) +
+  geom_histogram(aes(fage))
 ```
 
-But I’d have to think about it more. It would probably make sense to do
-it before we take the random sample.
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+    ## Warning: Removed 171 rows containing non-finite values (stat_bin).
+
+``` r
+ggplot(nc_sample) +
+  geom_histogram(aes(fage))
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+    ## Warning: Removed 130 rows containing non-finite values (stat_bin).
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-7-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-7-2.png" width="50%" />
+
+Mother’s age
+
+``` r
+ggplot(ncbirths) +
+  geom_histogram(aes(mage))
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+``` r
+ggplot(nc_sample) +
+  geom_histogram(aes(mage))
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-8-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-8-2.png" width="50%" />
+
+These are still a bit weird.
 
 Beyond that, the distributions are pretty comparable
 
@@ -264,7 +337,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = mature))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-7-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-7-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-9-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-9-2.png" width="50%" />
 
 ``` r
 ggplot(ncbirths) +
@@ -282,7 +355,7 @@ ggplot(nc_sample) +
 
     ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-8-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-8-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-10-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-10-2.png" width="50%" />
 
 We randomly didn’t sample any NAs here, so that’s a little different
 
@@ -293,7 +366,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = premie))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-9-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-9-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-11-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-11-2.png" width="50%" />
 
 ``` r
 ggplot(ncbirths) +
@@ -311,9 +384,9 @@ ggplot(nc_sample) +
 
     ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
 
-    ## Warning: Removed 9 rows containing non-finite values (stat_bin).
+    ## Warning: Removed 7 rows containing non-finite values (stat_bin).
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-10-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-10-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-12-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-12-2.png" width="50%" />
 
 ``` r
 ggplot(ncbirths) +
@@ -331,34 +404,34 @@ ggplot(nc_sample) +
 
     ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
 
-    ## Warning: Removed 24 rows containing non-finite values (stat_bin).
-
-<img src="NC_births_files/figure-gfm/unnamed-chunk-11-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-11-2.png" width="50%" />
-
-``` r
-ggplot(ncbirths) +
-  geom_histogram(aes(weight))
-```
-
-    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
-
-``` r
-ggplot(nc_sample) +
-  geom_histogram(aes(weight))
-```
-
-    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
-
-<img src="NC_births_files/figure-gfm/unnamed-chunk-12-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-12-2.png" width="50%" />
-
-``` r
-ggplot(ncbirths) +
-  geom_bar(aes(x = lowbirthweight))
-ggplot(nc_sample) +
-  geom_bar(aes(x = lowbirthweight))
-```
+    ## Warning: Removed 22 rows containing non-finite values (stat_bin).
 
 <img src="NC_births_files/figure-gfm/unnamed-chunk-13-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-13-2.png" width="50%" />
+
+``` r
+ggplot(ncbirths) +
+  geom_histogram(aes(weight))
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+``` r
+ggplot(nc_sample) +
+  geom_histogram(aes(weight))
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-14-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-14-2.png" width="50%" />
+
+``` r
+ggplot(ncbirths) +
+  geom_bar(aes(x = lowbirthweight))
+ggplot(nc_sample) +
+  geom_bar(aes(x = lowbirthweight))
+```
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-15-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-15-2.png" width="50%" />
 
 ``` r
 ggplot(ncbirths) +
@@ -367,7 +440,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = sex))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-14-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-14-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-16-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-16-2.png" width="50%" />
 
 ``` r
 ggplot(ncbirths) +
@@ -376,7 +449,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = habit))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-15-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-15-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-17-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-17-2.png" width="50%" />
 
 Again, we didn’t randomly sample NAs for marital status
 
@@ -387,7 +460,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = marital))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-16-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-16-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-18-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-18-2.png" width="50%" />
 
 or race
 
@@ -398,7 +471,7 @@ ggplot(nc_sample) +
   geom_bar(aes(x = whitemom))
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-17-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-17-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-19-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-19-2.png" width="50%" />
 
 ## Other checks
 
@@ -424,7 +497,7 @@ nc_sample %>%
     ## # A tibble: 1 x 3
     ##   mean_wt sd_wt     n
     ##     <dbl> <dbl> <int>
-    ## 1    7.19  1.38  1000
+    ## 1    7.22  1.37  1000
 
 Those look close to me\!
 
@@ -437,7 +510,84 @@ ggplot(data = nc_sample, aes(x = habit, y = weight)) +
   geom_boxplot()
 ```
 
-<img src="NC_births_files/figure-gfm/unnamed-chunk-19-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-19-2.png" width="50%" />
+<img src="NC_births_files/figure-gfm/unnamed-chunk-21-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-21-2.png" width="50%" />
+
+Let’s see how the ages look in relation to one another
+
+``` r
+ggplot(ncbirths) + geom_point(aes(x=fage, y=mage))
+```
+
+    ## Warning: Removed 171 rows containing missing values (geom_point).
+
+``` r
+ggplot(nc_sample) + geom_point(aes(x=fage, y=mage))
+```
+
+    ## Warning: Removed 130 rows containing missing values (geom_point).
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-22-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-22-2.png" width="50%" />
+
+Okay, part of the problem is that outlier in father’s age.
+
+``` r
+ggplot(ncbirths) + geom_point(aes(x=fage, y=mage)) + xlim(10, 60)
+```
+
+    ## Warning: Removed 171 rows containing missing values (geom_point).
+
+``` r
+ggplot(nc_sample) + geom_point(aes(x=fage, y=mage)) + xlim(10, 60)
+```
+
+    ## Warning: Removed 131 rows containing missing values (geom_point).
+
+<img src="NC_births_files/figure-gfm/unnamed-chunk-23-1.png" width="50%" /><img src="NC_births_files/figure-gfm/unnamed-chunk-23-2.png" width="50%" />
+
+For a little more rigor, we could look at the linear model,
+
+``` r
+m1 <- lm(mage~fage, data = ncbirths)
+m2 <- lm(mage~fage, data = filter(nc_sample, fage < 60))
+confint(m1)
+```
+
+    ##                 2.5 %   97.5 %
+    ## (Intercept) 4.8469876 7.261183
+    ## fage        0.6732939 0.751167
+
+``` r
+confint(m2)
+```
+
+    ##                 2.5 %     97.5 %
+    ## (Intercept) 8.3136276 11.0944439
+    ## fage        0.5400645  0.6308945
+
+Ooh, that’s not great… the confidence intervals don’t even intersect\!
+
+``` r
+ncbirths %>%
+  summarize(cor(fage, mage, use = "complete.obs"))
+```
+
+    ## # A tibble: 1 x 1
+    ##   `cor(fage, mage, use = "complete.obs")`
+    ##                                     <dbl>
+    ## 1                                   0.781
+
+``` r
+nc_sample %>%
+  summarize(cor(fage, mage, use = "complete.obs"))
+```
+
+    ## # A tibble: 1 x 1
+    ##   `cor(fage, mage, use = "complete.obs")`
+    ##                                     <dbl>
+    ## 1                                   0.640
+
+Maybe the simulation needs to take into account both father and mother
+at the same time.
 
 ``` r
 ncbirths %>%
@@ -465,9 +615,9 @@ nc_sample %>%
     ## # A tibble: 3 x 2
     ##   habit     mean_weight
     ##   <chr>           <dbl>
-    ## 1 nonsmoker        7.26
-    ## 2 smoker           6.72
-    ## 3 <NA>             8.62
+    ## 1 nonsmoker        7.25
+    ## 2 smoker           6.96
+    ## 3 <NA>             7.86
 
 Again, looks close.
 

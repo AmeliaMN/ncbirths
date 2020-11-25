@@ -10,6 +10,8 @@ library(tidyverse)
 library(openintro)
 ```
 
+
+
 An attempt to reproduce the `ncbirths` dataset from the `openintro` package. Data provenance has been lost on that dataset, other than the fact that it's from 2004. 
 
 I found the [ICPSR data from 2004](https://www.icpsr.umich.edu/web/ICPSR/studies/4707/versions/V1), which is quite large. 
@@ -68,7 +70,7 @@ Again using the data dictionary, I recoded most of the variables.
 ```{r}
 nc <- nc %>%
   mutate(
-    fage = case_when(
+    fage_cat = case_when(
       fage == 1 ~ "Under 15 years",
       fage == 2 ~ "15-19 years",
       fage == 3 ~ "20-24 years",
@@ -79,15 +81,15 @@ nc <- nc %>%
       fage == 8 ~ "45-49 years",
       fage == 9 ~ "50-54 years",
       fage == 10 ~ "55-98 years",
-      fage == 11 ~ "Not stated"
+      fage == 11 ~ NA_character_
     ),
-    mage = case_when(
+    mage_cat = case_when(
       mage == 1 ~ "Under 15 years",
-      mage == 3 ~ "15 years",
-      mage == 4 ~ "16 years",
-      mage == 5 ~ "17 years",
-      mage == 6 ~ "18 years",
-      mage == 7 ~ "19 years",
+      mage == 3 ~ "15",
+      mage == 4 ~ "16",
+      mage == 5 ~ "17",
+      mage == 6 ~ "18",
+      mage == 7 ~ "19",
       mage == 8 ~ "20-24 years",
       mage == 9 ~ "25-29 years",
       mage == 10 ~ "30-34 years",
@@ -143,9 +145,46 @@ nc <- nc %>%
     )
   )
 nc <- nc %>%
-  select(fage, mage, mature, weeks, premie, visits, 
+  select(fage_cat, mage_cat, mature, weeks, premie, visits, 
          gained, weight, lowbirthweight, sex, habit, 
          marital, whitemom)
+```
+
+We want to simulate ages from the categorical variables `mage_cat` and `fage_cat`, so we need a little function: 
+```{r simulate-age}
+simulate_ages <- function(.x, .y) {
+  if(is.na(.y)) {
+    rep(NA_integer_, times = nrow(.x))
+  } else if (.y == "Under 15 years") {
+    sample(11:14, size = nrow(.x), replace = TRUE)
+  } else if (.y %in% c("15", "16", "17", "18", "19")) {
+    rep(as.numeric(.y), times = nrow(.x))
+  } else if (.y == "55-98 years") {
+    sample(55:98, size = nrow(.x), replace = TRUE)
+  } else {
+    age <- as.numeric(substr(.y, start = 1, stop = 2))
+    sample(age:(age + 4), size = nrow(.x), replace = TRUE)
+  }
+}
+```
+
+Use the function: 
+```{r}
+nc <- nc %>%
+  group_by(mage_cat) %>%
+  nest() %>%
+  mutate(mage = map2(data, mage_cat, simulate_ages)) %>%
+  unnest(cols = c(data, mage)) %>%
+  ungroup()
+nc <- nc %>%
+  group_by(fage_cat) %>%
+  nest() %>%
+  mutate(fage = map2(data, fage_cat, simulate_ages)) %>%
+  unnest(cols = c(data, fage)) %>%
+  ungroup()
+
+
+
 dim(nc)
 ```
 
@@ -161,38 +200,48 @@ data(ncbirths)
 
 
 ## Comparing to ncbirths 
-Then, I did all the univariate plots to compare my sample to `ncbirths`. There were some differences right off the bat:
+Then, I did all the univariate plots to compare my sample to `ncbirths`. 
 
-Father's age is now categorical
+
+For age, we now have two variables: a categorical one from the original data, and a numeric one we simulated. 
+
+Let's start by comparing the original numeric variables to the categorical ones. 
+
+Father's age
 ```{r}
 ggplot(ncbirths) +
   geom_histogram(aes(fage))
 ggplot(nc_sample) +
-  geom_bar(aes(fage))
+  geom_bar(aes(fage_cat))
 ```
 
-As is mother's age
+Mother's age
 ```{r}
 ggplot(ncbirths) +
   geom_histogram(aes(mage))
 ggplot(nc_sample) +
-  geom_bar(aes(mage))
+  geom_bar(aes(mage_cat))
 ```
 
-I think we could probably do some sort of recoding along the lines of, 
+Now, let's look at our distributions with the simulated variables,
 
-```{r, eval=FALSE}
-# this doesn't work at all
-test <- nc_sample %>%
-  select(mage)
-test <- test %>%
-  mutate(mage2 = case_when(
-    mage == "15-19 years" ~ sample(15:19, size = 1),
-    TRUE ~ mage
-  ))
+Father's age
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(fage))
+ggplot(nc_sample) +
+  geom_histogram(aes(fage))
 ```
 
-But I'd have to think about it more. It would probably make sense to do it before we take the random sample. 
+Mother's age
+```{r}
+ggplot(ncbirths) +
+  geom_histogram(aes(mage))
+ggplot(nc_sample) +
+  geom_histogram(aes(mage))
+```
+
+These are still a bit weird. 
 
 Beyond that, the distributions are pretty comparable 
 
@@ -297,6 +346,38 @@ ggplot(data = ncbirths, aes(x = habit, y = weight)) +
 ggplot(data = nc_sample, aes(x = habit, y = weight)) +
   geom_boxplot()
 ```
+
+Let's see how the ages look in relation to one another
+```{r}
+ggplot(ncbirths) + geom_point(aes(x=fage, y=mage))
+ggplot(nc_sample) + geom_point(aes(x=fage, y=mage))
+```
+
+Okay, part of the problem is that outlier in father's age. 
+```{r}
+ggplot(ncbirths) + geom_point(aes(x=fage, y=mage)) + xlim(10, 60)
+ggplot(nc_sample) + geom_point(aes(x=fage, y=mage)) + xlim(10, 60)
+```
+
+For a little more rigor, we could look at the linear model, 
+```{r}
+m1 <- lm(mage~fage, data = ncbirths)
+m2 <- lm(mage~fage, data = filter(nc_sample, fage < 60))
+confint(m1)
+confint(m2)
+```
+
+Ooh, that's not great... the confidence intervals don't even intersect! 
+
+```{r}
+ncbirths %>%
+  summarize(cor(fage, mage, use = "complete.obs"))
+nc_sample %>%
+  summarize(cor(fage, mage, use = "complete.obs"))
+```
+
+Maybe the simulation needs to take into account both father and mother at the same time. 
+
 
 ```{r}
 ncbirths %>%
